@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Functions
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -36,6 +38,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -92,12 +95,17 @@ fun OnCanvasMathOverlay(
     onUpdateMathObject: (String, String, String, String) -> Unit,
     onFlattenMathObjectToCanvas: (String) -> Unit,
     onDeleteObject: (String) -> Unit,
+    onUpdateTextObject: (String, String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val mathNodes = remember(objects) {
         objects.filter { it.type == CanvasObjectType.MATH_FORMULA && !it.isBakedToCanvas }
     }
+    val textNodes = remember(objects) {
+        objects.filter { it.type == CanvasObjectType.TEXT && !it.isBakedToCanvas }
+    }
     var inlineEditingObjectId by remember { mutableStateOf<String?>(null) }
+    var editingTextObject by remember { mutableStateOf<CanvasObject?>(null) }
 
     Box(modifier = modifier.fillMaxSize()) {
         mathNodes.forEach { mathObj ->
@@ -233,6 +241,146 @@ fun OnCanvasMathOverlay(
             }
         }
 
+        // 2. Interactive On-Canvas Text Nodes (Drag to Move, Double-Tap to Edit, Scale & Delete)
+        textNodes.forEach { textObj ->
+            val isSelected = textObj.id == selectedObjectId
+            val screenX = (textObj.x * zoomScale + panOffsetX).roundToInt()
+            val screenY = (textObj.y * zoomScale + panOffsetY).roundToInt()
+
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .offset { IntOffset(screenX - 100, screenY - 45) }
+                    .scale((textObj.scale * zoomScale).coerceIn(0.45f, 3.5f))
+                    .pointerInput(textObj.id) {
+                        detectTapGestures(
+                            onTap = { onSelectObject(textObj.id) },
+                            onDoubleTap = {
+                                onSelectObject(textObj.id)
+                                editingTextObject = textObj
+                            }
+                        )
+                    }
+                    .pointerInput(textObj.id, zoomScale) {
+                        detectDragGestures(
+                            onDragStart = { onSelectObject(textObj.id) },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                onMoveObject(
+                                    textObj.id,
+                                    dragAmount.x / zoomScale.coerceAtLeast(0.25f),
+                                    dragAmount.y / zoomScale.coerceAtLeast(0.25f)
+                                )
+                            }
+                        )
+                    }
+                    .testTag("canvas_text_node_${textObj.id}")
+            ) {
+                // Floating Action Toolbar when Selected
+                if (isSelected) {
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = StudioSlate900.copy(alpha = 0.95f),
+                        shadowElevation = 6.dp,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            IconButton(
+                                onClick = { editingTextObject = textObj },
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .testTag("edit_text_node_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Edit Text",
+                                    tint = Color(0xFF38BDF8),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            IconButton(
+                                onClick = { onScaleObject(textObj.id, -0.15f) },
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .testTag("scale_down_text_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Remove,
+                                    contentDescription = strings.scaleDown,
+                                    tint = PureWhite,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            IconButton(
+                                onClick = { onScaleObject(textObj.id, 0.15f) },
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .testTag("scale_up_text_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = strings.scaleUp,
+                                    tint = PureWhite,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            IconButton(
+                                onClick = { onFlattenMathObjectToCanvas(textObj.id) },
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .testTag("stamp_text_node_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.DoneAll,
+                                    contentDescription = "Stamp to Canvas",
+                                    tint = Color(0xFF10B981),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            IconButton(
+                                onClick = { onDeleteObject(textObj.id) },
+                                modifier = Modifier.size(30.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = strings.deleteSelectedObject,
+                                    tint = Color(0xFFF87171),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Text Display Surface (Double-click to edit hint, drag to move)
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isSelected) Color(0xFFEFF6FF) else Color.White.copy(alpha = 0.94f),
+                    tonalElevation = if (isSelected) 8.dp else 2.dp,
+                    shadowElevation = if (isSelected) 6.dp else 2.dp,
+                    modifier = Modifier
+                        .border(
+                            width = if (isSelected) 2.dp else 1.dp,
+                            color = if (isSelected) ElectricIndigo else Color(0xFFCBD5E1),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        text = textObj.text.ifBlank { "Text" },
+                        color = Color(textObj.colorArgb),
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
+
         // Inline On-Canvas Formula Quick Editor Card
         val editingObj = mathNodes.firstOrNull { it.id == inlineEditingObjectId }
         if (editingObj != null) {
@@ -247,6 +395,38 @@ fun OnCanvasMathOverlay(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .padding(16.dp)
+            )
+        }
+
+        // Dialog for editing text on double-tap or Edit icon
+        if (editingTextObject != null) {
+            val target = editingTextObject!!
+            var editValue by remember(target.id) { mutableStateOf(target.text) }
+            AlertDialog(
+                onDismissRequest = { editingTextObject = null },
+                title = { Text(strings.insertTextTitle) },
+                text = {
+                    OutlinedTextField(
+                        value = editValue,
+                        onValueChange = { editValue = it },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            onUpdateTextObject(target.id, editValue)
+                            editingTextObject = null
+                        }
+                    ) {
+                        Text(strings.addTextBtn)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { editingTextObject = null }) {
+                        Text(strings.cancelBtn)
+                    }
+                }
             )
         }
     }

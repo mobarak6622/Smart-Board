@@ -61,6 +61,9 @@ object CanvasRenderEngine {
             if (obj.type == CanvasObjectType.MATH_FORMULA && !obj.isBakedToCanvas && !renderUnbakedMathNodes) {
                 continue
             }
+            if (obj.type == CanvasObjectType.TEXT && !obj.isBakedToCanvas && !renderUnbakedMathNodes) {
+                continue
+            }
             drawCanvasObject(canvas, obj, isSelected = obj.id == selectedObjectId)
         }
     }

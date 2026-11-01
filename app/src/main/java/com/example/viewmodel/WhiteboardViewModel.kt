@@ -220,6 +220,27 @@ class WhiteboardViewModel(
         }
     }
 
+    fun zoomIn() {
+        _uiState.update { state ->
+            val newScale = (state.zoomScale * 1.25f).coerceIn(0.5f, 4.0f)
+            state.copy(zoomScale = newScale)
+        }
+    }
+
+    fun zoomOut() {
+        _uiState.update { state ->
+            val newScale = (state.zoomScale / 1.25f).coerceIn(0.5f, 4.0f)
+            state.copy(zoomScale = newScale)
+        }
+    }
+
+    fun toggleHandPan() {
+        _uiState.update { state ->
+            val nextTool = if (state.activeTool == DrawingToolType.HAND_PAN) DrawingToolType.PEN else DrawingToolType.HAND_PAN
+            state.copy(activeTool = nextTool)
+        }
+    }
+
     fun resetZoomPan() {
         _uiState.update {
             it.copy(
@@ -433,7 +454,6 @@ class WhiteboardViewModel(
         commitStroke(arcStroke)
     }
 
-    // Text, Math & Image Canvas Objects
     fun addTextObject(text: String) {
         if (!_uiState.value.canCurrentUserDraw) return
         val clean = text.trim().ifBlank { return }
@@ -443,10 +463,37 @@ class WhiteboardViewModel(
             x = 540f,
             y = 650f,
             colorArgb = _uiState.value.selectedColorArgb,
-            text = clean
+            text = clean,
+            isBakedToCanvas = false
         )
         updateCurrentPage(selectObjectId = newObj.id) { page ->
             page.copy(objects = page.objects + newObj)
+        }
+    }
+
+    fun updateTextObject(objectId: String, newText: String) {
+        if (!_uiState.value.canCurrentUserDraw) return
+        val clean = newText.trim()
+        if (clean.isBlank()) return
+        pushUndoSnapshot()
+        updateCurrentPage(selectObjectId = objectId) { page ->
+            page.copy(
+                objects = page.objects.map { obj ->
+                    if (obj.id == objectId) obj.copy(text = clean) else obj
+                }
+            )
+        }
+    }
+
+    fun flattenTextObjectToCanvas(objectId: String) {
+        if (!_uiState.value.canCurrentUserDraw) return
+        pushUndoSnapshot()
+        updateCurrentPage(selectObjectId = null) { page ->
+            page.copy(
+                objects = page.objects.map { obj ->
+                    if (obj.id == objectId) obj.copy(isBakedToCanvas = true) else obj
+                }
+            )
         }
     }
 

@@ -52,5 +52,8 @@ class LauncherAndStartupRobolectricTest {
         composeTestRule.onNodeWithTag("project_drawer_button").assertIsDisplayed()
         composeTestRule.onNodeWithTag("undo_button").assertIsDisplayed()
         composeTestRule.onNodeWithTag("focus_mode_toggle_button").assertExists()
+        composeTestRule.onNodeWithTag("zoom_in_button").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("zoom_out_button").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("reset_zoom_pan_pill").assertIsDisplayed()
     }
 }

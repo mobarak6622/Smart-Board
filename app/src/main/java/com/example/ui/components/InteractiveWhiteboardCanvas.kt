@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.ButtonDefaults
@@ -43,6 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
@@ -98,6 +101,10 @@ fun InteractiveWhiteboardCanvas(
     onDeleteObjectById: (String) -> Unit,
     onZoomPanChange: (Float, Float, Float) -> Unit,
     onResetZoomPan: () -> Unit,
+    onZoomIn: () -> Unit = {},
+    onZoomOut: () -> Unit = {},
+    onToggleHandPan: () -> Unit = {},
+    onUpdateTextObject: (String, String) -> Unit = { _, _ -> },
     onRulerMove: (Float, Float) -> Unit,
     onRulerRotate: (Float, Float) -> Unit,
     onProtractorMove: (Float, Float) -> Unit,
@@ -139,13 +146,13 @@ fun InteractiveWhiteboardCanvas(
                         val down = awaitFirstDown(requireUnconsumed = false)
                         onCanvasTouchStarted()
 
-                        val currentZoom = uiState.zoomScale.coerceIn(0.5f, 4f)
-                        val currentPanX = uiState.panOffsetX
-                        val currentPanY = uiState.panOffsetY
+                        var localZoom = uiState.zoomScale.coerceIn(0.5f, 4f)
+                        var localPanX = uiState.panOffsetX
+                        var localPanY = uiState.panOffsetY
 
                         // Convert screen touch to world/canvas coordinates
-                        val startWorldX = (down.position.x - currentPanX) / currentZoom
-                        val startWorldY = (down.position.y - currentPanY) / currentZoom
+                        val startWorldX = (down.position.x - localPanX) / localZoom
+                        val startWorldY = (down.position.y - localPanY) / localZoom
 
                         var target = if (!canDrawOnBoard) {
                             GestureTarget.HAND_PAN
@@ -201,14 +208,15 @@ fun InteractiveWhiteboardCanvas(
                                 val panChange = event.calculatePan()
                                 val centroid = event.calculateCentroid(useCurrent = false)
 
-                                val oldScale = uiState.zoomScale
+                                val oldScale = localZoom
                                 val newScale = (oldScale * zoomChange).coerceIn(0.5f, 4.0f)
-                                val scaleRatio = newScale / oldScale
+                                val scaleRatio = if (oldScale > 0.001f) newScale / oldScale else 1f
 
-                                val newPanX = centroid.x - (centroid.x - uiState.panOffsetX) * scaleRatio + panChange.x
-                                val newPanY = centroid.y - (centroid.y - uiState.panOffsetY) * scaleRatio + panChange.y
+                                localPanX = centroid.x - (centroid.x - localPanX) * scaleRatio + panChange.x
+                                localPanY = centroid.y - (centroid.y - localPanY) * scaleRatio + panChange.y
+                                localZoom = newScale
 
-                                onZoomPanChange(newScale, newPanX, newPanY)
+                                onZoomPanChange(localZoom, localPanX, localPanY)
                                 event.changes.forEach { it.consume() }
                                 continue
                             }
@@ -219,14 +227,10 @@ fun InteractiveWhiteboardCanvas(
                             }
 
                             val change = event.changes.firstOrNull() ?: break
-                            val liveZoom = uiState.zoomScale.coerceIn(0.5f, 4f)
-                            val livePanX = uiState.panOffsetX
-                            val livePanY = uiState.panOffsetY
-
                             val curScreenX = change.position.x
                             val curScreenY = change.position.y
-                            val curWorldX = (curScreenX - livePanX) / liveZoom
-                            val curWorldY = (curScreenY - livePanY) / liveZoom
+                            val curWorldX = (curScreenX - localPanX) / localZoom
+                            val curWorldY = (curScreenY - localPanY) / localZoom
 
                             val worldDx = curWorldX - prevWorldX
                             val worldDy = curWorldY - prevWorldY
@@ -236,10 +240,12 @@ fun InteractiveWhiteboardCanvas(
                             if (change.pressed) {
                                 when (target) {
                                     GestureTarget.HAND_PAN -> {
+                                        localPanX += screenDx
+                                        localPanY += screenDy
                                         onZoomPanChange(
-                                            liveZoom,
-                                            livePanX + screenDx,
-                                            livePanY + screenDy
+                                            localZoom,
+                                            localPanX,
+                                            localPanY
                                         )
                                     }
 
@@ -267,8 +273,8 @@ fun InteractiveWhiteboardCanvas(
                                         } else {
                                             // Process historical motion samples for ultra-smooth fast handwriting
                                             for (hist in change.historical) {
-                                                val hWorldX = (hist.position.x - livePanX) / liveZoom
-                                                val hWorldY = (hist.position.y - livePanY) / liveZoom
+                                                val hWorldX = (hist.position.x - localPanX) / localZoom
+                                                val hWorldY = (hist.position.y - localPanY) / localZoom
                                                 val hSnapped = CanvasRenderEngine.snapPointToInstruments(
                                                     rawX = hWorldX,
                                                     rawY = hWorldY,
@@ -361,7 +367,7 @@ fun InteractiveWhiteboardCanvas(
             nativeCanvas.restoreToCount(saveCount)
         }
 
-        // 2. Interactive On-Canvas Compose Math Overlay Component ("দুটোই চাই" — Live Compose Nodes + Stamp to Canvas)
+        // 2. Interactive On-Canvas Compose Math & Text Overlay Component ("দুটোই চাই" — Live Compose Nodes + Stamp to Canvas)
         OnCanvasMathOverlay(
             objects = uiState.currentPage.objects,
             selectedObjectId = uiState.selectedObjectId,
@@ -374,43 +380,95 @@ fun InteractiveWhiteboardCanvas(
             onScaleObject = onScaleObjectById,
             onUpdateMathObject = onUpdateMathObject,
             onFlattenMathObjectToCanvas = onFlattenMathObjectToCanvas,
-            onDeleteObject = onDeleteObjectById
+            onDeleteObject = onDeleteObjectById,
+            onUpdateTextObject = onUpdateTextObject
         )
 
-        // 3. Floating Zoom Percentage & 100% Reset Pill
-        AnimatedVisibility(
-            visible = abs(zoomScale - 1f) > 0.02f || abs(panOffsetX) > 6f || abs(panOffsetY) > 6f,
-            enter = fadeIn(),
-            exit = fadeOut(),
+        // 3. Floating Quick Zoom, Unzoom & Pan Controller Bar
+        Surface(
+            shape = RoundedCornerShape(22.dp),
+            color = StudioSlate900.copy(alpha = 0.94f),
+            tonalElevation = 8.dp,
+            shadowElevation = 6.dp,
             modifier = Modifier
                 .align(Alignment.TopStart)
-                .padding(top = 82.dp, start = 14.dp)
+                .padding(top = 82.dp, start = 12.dp)
         ) {
-            Surface(
-                shape = RoundedCornerShape(18.dp),
-                color = StudioSlate900.copy(alpha = 0.92f),
-                tonalElevation = 6.dp,
-                shadowElevation = 4.dp,
-                modifier = Modifier
-                    .clickable { onResetZoomPan() }
-                    .testTag("reset_zoom_pan_pill")
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
             ) {
+                // Zoom Out / Unzoom (-)
+                IconButton(
+                    onClick = onZoomOut,
+                    modifier = Modifier
+                        .size(34.dp)
+                        .testTag("zoom_out_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Remove,
+                        contentDescription = "Zoom Out / Unzoom",
+                        tint = PureWhite,
+                        modifier = Modifier.size(17.dp)
+                    )
+                }
+
+                // Current Zoom Percentage & 100% Reset Clickable Pill
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFF1E293B))
+                        .clickable { onResetZoomPan() }
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                        .testTag("reset_zoom_pan_pill")
                 ) {
                     Icon(
                         imageVector = Icons.Default.CenterFocusStrong,
                         contentDescription = "Reset Zoom",
                         tint = Color(0xFF38BDF8),
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(14.dp)
                     )
                     Text(
-                        text = "${(zoomScale * 100).roundToInt()}% • Reset",
+                        text = "${(zoomScale * 100).roundToInt()}%",
                         style = MaterialTheme.typography.labelMedium,
                         color = PureWhite,
                         fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // Zoom In (+)
+                IconButton(
+                    onClick = onZoomIn,
+                    modifier = Modifier
+                        .size(34.dp)
+                        .testTag("zoom_in_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Zoom In",
+                        tint = PureWhite,
+                        modifier = Modifier.size(17.dp)
+                    )
+                }
+
+                // Hand Pan Quick Toggle (Pan with 1 finger without drawing)
+                val isPanActive = uiState.activeTool == DrawingToolType.HAND_PAN
+                IconButton(
+                    onClick = onToggleHandPan,
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (isPanActive) ElectricIndigo else Color.Transparent)
+                        .testTag("quick_pan_toggle_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PanTool,
+                        contentDescription = "Hand Pan Canvas",
+                        tint = if (isPanActive) PureWhite else Color(0xFF94A3B8),
+                        modifier = Modifier.size(17.dp)
                     )
                 }
             }
