@@ -6,17 +6,16 @@
 
 ## 📥 সরাসরি অ্যাপ ডাউনলোড করুন (Download Android APK)
 
-আপনার অ্যান্ড্রয়েড ফোনে বা ট্যাবলেটে **SmartBoard Pro** ইনস্টল করতে নিচের যেকোনো একটি বাটনে ক্লিক করে সরাসরি `.apk` ফাইলটি ডাউনলোড করুন:
+আপনার অ্যান্ড্রয়েড ফোনে বা ট্যাবলেটে **SmartBoard Pro** ইনস্টল করতে নিচের লিংকে ক্লিক করে সরাসরি **`SmartBoard-Pro.apk`** ডাউনলোড করুন:
 
-| ডাউনলোড মাধ্যম (Download Option) | সরাসরি ডাউনলোড লিংক (Direct Link) |
-| :--- | :--- |
-| **১. তাৎক্ষণিক সরাসরি APK ডাউনলোড (Direct Repo APK)** | [**⬇️ Download SmartBoard-Pro APK (app-debug.apk)**](./.build-outputs/app-debug.apk?raw=true) |
-| **২. GitHub Releases থেকে সর্বশেষ APK ডাউনলোড** | [**🚀 Download SmartBoard-Pro.apk (Latest Release)**](../../releases/latest/download/SmartBoard-Pro.apk) |
-| **৩. GitHub Actions Build Artifacts** | [**⚙️ View & Download from GitHub Actions**](../../actions/workflows/build-apk.yml) |
+### 👉 [**⬇️ সরাসরি APK ডাউনলোড করুন — SmartBoard-Pro.apk (One-Click Direct Download)**](apk/SmartBoard-Pro.apk?raw=true)
 
-> **ইনস্টল করার নিয়ম:**
-> ১. উপরের [**⬇️ Download SmartBoard-Pro APK**](./.build-outputs/app-debug.apk?raw=true) বা [**🚀 Latest Release APK**](../../releases/latest/download/SmartBoard-Pro.apk) লিংকে ক্লিক করে ফাইলটি ডাউনলোড করুন।
-> ২. আপনার ফোনে ডাউনলোড হওয়া `.apk` ফাইলটিতে ট্যাপ করুন এবং **Install** করুন।
+অথবা GitHub ফাইল ভিউয়ার থেকে ডাউনলোড করতে এখানে ক্লিক করুন:
+- 📂 [**`apk/SmartBoard-Pro.apk` ফাইল পেজ ওপেন করুন (তারপর "Download raw file" বাটনে ক্লিক করুন)**](apk/SmartBoard-Pro.apk)
+
+> **⚠️ ৪0৪ (404 Page Not Found) এড়াতে জরুরি নির্দেশনা:**
+> ১. এই পরিবর্তনটি করার পর অবশ্যই Google AI Studio-এর উপরের ডানদিকের মেনু থেকে **Push to GitHub** (অথবা **Sync / Commit to GitHub**) বাটনে **আবার ক্লিক করে** আপনার GitHub রিপোজিটরি আপডেট করে নিন।
+> ২. পুশ সম্পন্ন হলে আপনার GitHub রিপোজিটরি পেজটি রিফ্রেশ করুন—তখন উপরের **`apk/SmartBoard-Pro.apk`** লিংকটি সরাসরি কাজ করবে এবং কোনো 404 দেখাবে না।
 
 ---
 

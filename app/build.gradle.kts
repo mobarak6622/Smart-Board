@@ -151,3 +151,18 @@ dependencies {
   "ksp"(libs.androidx.room.compiler)
   "ksp"(libs.moshi.kotlin.codegen)
 }
+
+val exportGithubApk = tasks.register<Copy>("exportGithubApk") {
+  duplicatesStrategy = DuplicatesStrategy.INCLUDE
+  from(
+    "${rootDir}/.build-outputs/app-debug.apk",
+    layout.buildDirectory.file("outputs/apk/debug/app-debug.apk")
+  )
+  into("${rootDir}/apk")
+  rename { "SmartBoard-Pro.apk" }
+}
+
+tasks.matching { it.name == "assembleDebug" || it.name == "packageDebug" }.configureEach {
+  finalizedBy(exportGithubApk)
+}
+

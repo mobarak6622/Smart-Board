@@ -9,55 +9,22 @@ permissions:
   contents: write
 
 jobs:
-  build-apk:
+  publish-apk:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '21'
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Decode Debug Signing Keystore
-        run: |
-          if [ -f "debug.keystore.base64" ]; then
-            base64 -d debug.keystore.base64 > debug.keystore
-          fi
-          if [ ! -f ".env" ] && [ -f ".env.example" ]; then
-            cp .env.example .env
-          fi
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.11.1'
-
-      - name: Build Debug APK
-        run: gradle assembleDebug
-
-      - name: Prepare APK for Download
-        run: |
-          mkdir -p release-apk
-          if [ -f ".build-outputs/app-debug.apk" ]; then
-            cp .build-outputs/app-debug.apk release-apk/SmartBoard-Pro.apk
-          elif [ -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
-            cp app/build/outputs/apk/debug/app-debug.apk release-apk/SmartBoard-Pro.apk
-          fi
-
-      - name: Upload APK Artifact
+      - name: Upload Prebuilt APK as Workflow Artifact
+        if: hashFiles('apk/SmartBoard-Pro.apk') != ''
         uses: actions/upload-artifact@v4
         with:
           name: SmartBoard-Pro-APK
-          path: release-apk/SmartBoard-Pro.apk
+          path: apk/SmartBoard-Pro.apk
 
       - name: Publish APK to GitHub Releases (Latest)
+        if: hashFiles('apk/SmartBoard-Pro.apk') != ''
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.0
@@ -66,7 +33,7 @@ jobs:
             ### SmartBoard Pro — Digital Teaching Whiteboard & Live Classroom (Android APK)
             - **Direct APK Download**: Download `SmartBoard-Pro.apk` below and install on your Android phone or tablet.
             - **Bilingual Support**: বাংলা (Bengali) & English.
-          files: release-apk/SmartBoard-Pro.apk
+          files: apk/SmartBoard-Pro.apk
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
