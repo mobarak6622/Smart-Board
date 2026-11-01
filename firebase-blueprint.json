@@ -1,0 +1,128 @@
+{
+  "entities": {
+    "ClassroomSession": {
+      "title": "ClassroomSession",
+      "description": "Real-time online whiteboard classroom session managed by a teacher and joined by students.",
+      "type": "object",
+      "properties": {
+        "roomCode": {
+          "type": "string",
+          "description": "Unique 6-character classroom code (e.g. SB4829)."
+        },
+        "title": {
+          "type": "string",
+          "description": "Classroom lesson title."
+        },
+        "teacherUid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the teacher who created the classroom."
+        },
+        "teacherName": {
+          "type": "string",
+          "description": "Display name of the teacher."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "ended"],
+          "description": "Session lifecycle state."
+        },
+        "allowStudentDrawing": {
+          "type": "boolean",
+          "description": "Whether students are allowed to draw on the shared whiteboard globally."
+        },
+        "currentPageIndex": {
+          "type": "integer",
+          "description": "Zero-based index of the currently active whiteboard page."
+        },
+        "participantCount": {
+          "type": "integer",
+          "description": "Number of active participants in the classroom."
+        },
+        "pagesJson": {
+          "type": "string",
+          "description": "Serialized multi-page whiteboard strokes, shapes, and math objects."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of classroom creation (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last stroke or state sync (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "roomCode",
+        "title",
+        "teacherUid",
+        "teacherName",
+        "status",
+        "allowStudentDrawing",
+        "currentPageIndex",
+        "participantCount",
+        "pagesJson",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ClassroomMember": {
+      "title": "ClassroomMember",
+      "description": "A participant (teacher or student) inside an active classroom session.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the participant."
+        },
+        "roomCode": {
+          "type": "string",
+          "description": "Parent classroom code for scoped queries."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Participant display name."
+        },
+        "role": {
+          "type": "string",
+          "enum": ["teacher", "student"],
+          "description": "Participant role in the classroom."
+        },
+        "canDraw": {
+          "type": "boolean",
+          "description": "Individual drawing permission controlled by the teacher."
+        },
+        "joinedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the participant joined."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when permission or status was last updated."
+        }
+      },
+      "required": [
+        "userId",
+        "roomCode",
+        "displayName",
+        "role",
+        "canDraw",
+        "joinedAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/classrooms/{roomCode}": {
+      "schema": { "$ref": "#/entities/ClassroomSession" },
+      "description": "Root collection of real-time online whiteboard classrooms."
+    },
+    "/classrooms/{roomCode}/members/{memberUid}": {
+      "schema": { "$ref": "#/entities/ClassroomMember" },
+      "description": "Subcollection of classroom participants and per-student drawing permissions."
+    }
+  }
+}

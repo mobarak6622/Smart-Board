@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">SmartBoard Pro</string>
+    <string name="cd_project_drawer">Open project drawer</string>
+    <string name="cd_undo">Undo last action</string>
+    <string name="cd_redo">Redo last action</string>
+    <string name="cd_clear_canvas">Clear current page</string>
+    <string name="cd_previous_page">Previous page</string>
+    <string name="cd_next_page">Next page</string>
+    <string name="cd_page_manager">Open page manager</string>
+    <string name="cd_language_toggle">Toggle Bengali and English language</string>
+    <string name="cd_export_menu">Export and share options</string>
+</resources>

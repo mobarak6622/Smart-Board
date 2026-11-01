@@ -1,0 +1,161 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Hardened Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 3 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // 3. Schema Validation Blueprints
+    function isValidClassroomSession(data) {
+      return data.roomCode is string && data.roomCode.size() >= 4 && data.roomCode.size() <= 20 &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+             data.teacherUid is string && data.teacherUid.size() >= 1 && data.teacherUid.size() <= 128 &&
+             data.teacherName is string && data.teacherName.size() >= 1 && data.teacherName.size() <= 80 &&
+             data.status is string && (data.status == 'active' || data.status == 'ended') &&
+             data.allowStudentDrawing is bool &&
+             data.currentPageIndex is int && data.currentPageIndex >= 0 && data.currentPageIndex <= 200 &&
+             data.participantCount is int && data.participantCount >= 1 && data.participantCount <= 500 &&
+             data.pagesJson is string && data.pagesJson.size() >= 2 && data.pagesJson.size() <= 900000 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidClassroomMember(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.roomCode is string && data.roomCode.size() >= 4 && data.roomCode.size() <= 20 &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+             data.role is string && (data.role == 'teacher' || data.role == 'student') &&
+             data.canDraw is bool &&
+             data.joinedAt is timestamp && data.joinedAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    // 4. Classrooms Collection Rules
+    match /classrooms/{roomCode} {
+      allow get: if isSignedIn() && isValidId(roomCode) &&
+                    (resource == null || existing().teacherUid == request.auth.uid || existing().status == 'active');
+
+      allow list: if isSignedIn() &&
+                     (existing().teacherUid == request.auth.uid || existing().status == 'active');
+
+      allow create: if isSignedIn() &&
+                       isValidId(roomCode) &&
+                       incoming().roomCode == roomCode &&
+                       incoming().teacherUid == request.auth.uid &&
+                       incoming().status == 'active' &&
+                       incoming().keys().hasAll([
+                         'roomCode', 'title', 'teacherUid', 'teacherName', 'status',
+                         'allowStudentDrawing', 'currentPageIndex', 'participantCount',
+                         'pagesJson', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'roomCode', 'title', 'teacherUid', 'teacherName', 'status',
+                         'allowStudentDrawing', 'currentPageIndex', 'participantCount',
+                         'pagesJson', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidClassroomSession(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(roomCode) &&
+                       isValidClassroomSession(incoming()) &&
+                       incoming().roomCode == existing().roomCode &&
+                       incoming().teacherUid == existing().teacherUid &&
+                       incoming().createdAt == existing().createdAt &&
+                       existing().status != 'ended' && (
+                         // Action 1: Teacher full session & permission update
+                         (existing().teacherUid == request.auth.uid &&
+                          incoming().diff(existing()).affectedKeys().hasOnly([
+                            'title', 'status', 'allowStudentDrawing', 'currentPageIndex',
+                            'participantCount', 'pagesJson', 'updatedAt'
+                          ])) ||
+                         // Action 2: Authorized Student stroke/board sync
+                         (existing().status == 'active' &&
+                          (existing().allowStudentDrawing == true ||
+                           (exists(/databases/$(database)/documents/classrooms/$(roomCode)/members/$(request.auth.uid)) &&
+                            get(/databases/$(database)/documents/classrooms/$(roomCode)/members/$(request.auth.uid)).data.canDraw == true)) &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['pagesJson', 'updatedAt'])) ||
+                         // Action 3: Student joining/leaving increments participantCount
+                         (existing().status == 'active' &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['participantCount', 'updatedAt']))
+                       );
+
+      allow delete: if isSignedIn() &&
+                       isValidId(roomCode) &&
+                       existing().teacherUid == request.auth.uid;
+
+      // 5. Classroom Members Subcollection Rules
+      match /members/{memberUid} {
+        allow get: if isSignedIn() && isValidId(roomCode) && isValidId(memberUid) &&
+                      (resource == null || existing().roomCode == roomCode);
+
+        allow list: if isSignedIn() && existing().roomCode == roomCode;
+
+        allow create: if isSignedIn() &&
+                         isValidId(roomCode) &&
+                         isValidId(memberUid) &&
+                         request.auth.uid == memberUid &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().roomCode == roomCode &&
+                         incoming().keys().hasAll([
+                           'userId', 'roomCode', 'displayName', 'role', 'canDraw', 'joinedAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'roomCode', 'displayName', 'role', 'canDraw', 'joinedAt', 'updatedAt'
+                         ]) &&
+                         isValidClassroomMember(incoming()) &&
+                         exists(/databases/$(database)/documents/classrooms/$(roomCode)) &&
+                         (
+                           (incoming().role == 'teacher' &&
+                            get(/databases/$(database)/documents/classrooms/$(roomCode)).data.teacherUid == request.auth.uid) ||
+                           (incoming().role == 'student' &&
+                            get(/databases/$(database)/documents/classrooms/$(roomCode)).data.teacherUid != request.auth.uid)
+                         );
+
+        allow update: if isSignedIn() &&
+                         isValidId(roomCode) &&
+                         isValidId(memberUid) &&
+                         isValidClassroomMember(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().roomCode == existing().roomCode &&
+                         incoming().joinedAt == existing().joinedAt && (
+                           // Action 1: Member updates own displayName without changing role or canDraw
+                           (request.auth.uid == memberUid &&
+                            incoming().role == existing().role &&
+                            incoming().canDraw == existing().canDraw &&
+                            incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'updatedAt'])) ||
+                           // Action 2: Classroom Teacher toggles student's canDraw permission
+                           (exists(/databases/$(database)/documents/classrooms/$(roomCode)) &&
+                            get(/databases/$(database)/documents/classrooms/$(roomCode)).data.teacherUid == request.auth.uid &&
+                            incoming().role == existing().role &&
+                            incoming().diff(existing()).affectedKeys().hasOnly(['canDraw', 'updatedAt']))
+                         );
+
+        allow delete: if isSignedIn() &&
+                         isValidId(roomCode) &&
+                         isValidId(memberUid) && (
+                           request.auth.uid == memberUid ||
+                           (exists(/databases/$(database)/documents/classrooms/$(roomCode)) &&
+                            get(/databases/$(database)/documents/classrooms/$(roomCode)).data.teacherUid == request.auth.uid)
+                         );
+      }
+    }
+  }
+}

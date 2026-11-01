@@ -1,0 +1,6 @@
+{
+  "name": "SmartBoard Pro",
+  "description": "Professional offline teaching whiteboard and digital drawing pad with smooth ink, geometry instruments, mathematics studio, multi-page management, and PNG/PDF export in English and Bengali.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

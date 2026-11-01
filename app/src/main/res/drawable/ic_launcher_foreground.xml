@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <group
+        android:scaleX="0.52"
+        android:scaleY="0.52"
+        android:translateX="5.76"
+        android:translateY="5.76">
+        <!-- Whiteboard Frame -->
+        <path
+            android:fillColor="#38BDF8"
+            android:pathData="M3,4C2.45,4 2,4.45 2,5V17C2,17.55 2.45,18 3,18H21C21.55,18 22,17.55 22,17V5C22,4.45 21.55,4 21,4H3ZM4,6H20V16H4V6Z" />
+        <!-- Stylus Pen & Curve Silhouette -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M3,17.25V21h3.75L17.81,9.94l-3.75,-3.75L3,17.25zM20.71,7.04c0.39,-0.39 0.39,-1.02 0,-1.41l-2.34,-2.34c-0.39,-0.39 -1.02,-0.39 -1.41,0l-1.83,1.83 3.75,3.75 1.83,-1.83z" />
+    </group>
+</vector>
