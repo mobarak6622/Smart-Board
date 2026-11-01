@@ -118,10 +118,17 @@ fun SmartBoardProApp(
             onCommitStroke = viewModel::commitStroke,
             onEraseStrokeAt = viewModel::eraseStrokeAt,
             onSelectObject = viewModel::selectObject,
+            onSelectStroke = viewModel::selectStroke,
             onMoveSelectedObject = viewModel::moveSelectedObject,
             onMoveObjectById = viewModel::moveObjectById,
+            onMoveSelectedStroke = viewModel::moveSelectedStroke,
+            onCommitStrokeMove = viewModel::commitStrokeMove,
             onScaleSelectedObject = viewModel::scaleSelectedObject,
             onScaleObjectById = viewModel::scaleObjectById,
+            onScaleSelectedStroke = viewModel::scaleSelectedStroke,
+            onDeleteSelectedStroke = viewModel::deleteSelectedStroke,
+            onConvertSelectedStrokeToText = viewModel::convertSelectedStrokeToText,
+            onTriggerRecognitionNow = viewModel::triggerHandwritingRecognitionNow,
             onUpdateMathObject = viewModel::updateMathObject,
             onFlattenMathObjectToCanvas = viewModel::flattenMathObjectToCanvas,
             onDeleteSelectedObject = viewModel::deleteSelectedObject,
@@ -253,6 +260,7 @@ fun SmartBoardProApp(
                 viewModel.clearCurrentPage(strings.clearConfirmMessage)
                 activeDockPanel = DockPanelType.NONE
             },
+            onToggleAutoRecognition = viewModel::toggleAutoRecognition,
             modifier = Modifier.align(Alignment.BottomCenter)
         )
 

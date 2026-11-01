@@ -1,85 +1,53 @@
-# SmartBoard Pro — Launcher Icon Visibility, Open Button Fix & Startup Verification Plan
+# পরিকল্পনা: ক্যানভাস কোঅর্ডিনেট ফিক্স, বাংলা/ইংরেজি/গণিত রিয়েলটাইম টাইপ রূপান্তর এবং লং-প্রেস ড্র্যাগ মুভ
 
-This plan resolves the exact root cause why **SmartBoard Pro** appeared in Android `Settings > Manage apps` (`29.47 MB`) with the **Open** button disabled and no icon in the Home Screen launcher menu, adds a one-tap Home Screen shortcut utility, and verifies full launcher intent resolution and activity startup using automated Robolectric tests.
-
----
-
-## User Review & Critical Decisions
-
-> [!IMPORTANT]
-> **Root Cause Identified in `AndroidManifest.xml`:**
-> Upon inspecting the manifest, `MainActivity`'s `<intent-filter>` declared:
-> `<category android:name="android.intent.action.LAUNCHER" />` instead of `<category android:name="android.intent.category.LAUNCHER" />`.
->
-> Because Android's `PackageManager.getLaunchIntentForPackage()` and all OEM Home Screen launchers (including Honor MagicOS) query strictly for `android.intent.category.LAUNCHER`, Android installed the APK (`29.47 MB`) in `Settings > Manage apps` but concluded the app had no launchable entry point—disabling the **Open** button and hiding the launcher icon.
-
-- **Confirmed Decision 1 (Symptom Diagnosis)**: Confirmed that the `Open` button inside `Settings > Manage apps > SmartBoard Pro` is disabled/missing on the user's phone, matching the `android.intent.category.LAUNCHER` manifest category mismatch.
-- **Confirmed Decision 2 (Fix Scope & Verification)**: Fix the launcher manifest declaration, add an in-app one-tap **Pin Shortcut to Home Screen** option inside Studio Settings, run automated Robolectric launcher/startup verification tests, and regenerate the downloadable `SmartBoard-Pro.apk` binary.
+ব্যবহারকারীর উত্থাপিত ত্রুটি ও নতুন চাহিদাসমূহ:
+1. **বাগ ফিক্স (কোঅর্ডিনেট মিসম্যাচ):** "এক স্থানে লিখলে অন্য স্থানে লেখা উঠে" — জুম ও প্যান করার পর টাচ ইনপুটের কোঅর্ডিনেট এবং ক্যানভাস রেন্ডারিং ম্যাট্রিক্সের গরমিল দূর করা।
+2. **নতুন ফিচার ১ (রিয়েলটাইম হ্যান্ডরাইটিং রূপান্তর):** বাংলা, ইংরেজি ও গণিত সমীকরণ লিখে হাত তুললে ২ সেকেন্ড পর স্বয়ংক্রিয়ভাবে হাতের লেখা কম্পিউটারের টাইপ টেক্সট বা সুন্দর ম্যাথ কার্ডে রূপান্তরিত হবে (সাথে ম্যানুয়াল রূপান্তর বাটনও থাকবে)।
+3. **নতুন ফিচার ২ (চেপে ধরে সরানো + সিলেক্ট টুল):** ক্যানভাসে যেকোনো আঁকা বা লেখার ওপর আঙুল চেপে ধরে (Long-press) সরাসরি টেনে সরানো যাবে এবং টুলবার থেকে 'সিলেক্ট টুল' দিয়েও ঘিরে একাধিক স্ট্রোক বা অবজেক্ট সরানো যাবে।
 
 ---
 
-## 1. Overview & Core Concept
+## ১. ব্যবহারকারীর পর্যালোচনা প্রয়োজন (User Review Required)
 
-- **What It Does**:
-  1. Restores standard Android launcher visibility and enables the **Open** button in `Settings > Manage apps` by declaring `<category android:name="android.intent.category.LAUNCHER" />` and `<category android:name="android.intent.category.DEFAULT" />` with `android:enabled="true"` and `android:exported="true"` on `MainActivity`.
-  2. Adds a **One-Tap Home Screen Shortcut (`হোম স্ক্রিনে শর্টকাট যোগ করুন / Add Home Screen Shortcut`)** button inside **Studio Settings** using Android's `ShortcutManager` API for OEM launchers (such as Honor MagicOS) that support pinned shortcuts.
-  3. Wraps Firebase / Classroom initialization in defensive error guards so the whiteboard studio always boots into offline Room mode even on devices without active Google Play Services.
-  4. Verifies via automated JVM/Robolectric tests that `PackageManager.getLaunchIntentForPackage()` returns a valid launch intent for `MainActivity` and that `MainActivity` renders its Compose UI without error.
-- **Target Audience / Persona**: Teachers, students, and self-learners installing `SmartBoard Pro` via APK on physical Android phones and tablets (including Honor MagicOS, Samsung OneUI, Xiaomi HyperOS, and stock Android).
-- **Key Value**: Immediate launcher icon visibility after APK installation, an enabled **Open** button in Android system settings, and verified startup stability.
+- **রূপান্তর মোড (Auto-Convert Toggle):** টুলবারে একটি "AI রিয়েলটাইম টাইপ" (Auto Handwriting-to-Text) টগল বোতাম থাকবে। এটি অন থাকলে লেখার পর ২ সেকেন্ড কোনো নতুন টাচ না পড়লে লেখাটি স্বয়ংক্রিয়ভাবে টেক্সট/ম্যাথ অবজেক্টে পরিণত হবে। অফ থাকলে সাধারণ মুক্তহস্তে ড্রয়িং করা যাবে।
+- **লং-প্রেস সংবেদনশীলতা:** যেকোনো স্ট্রোকের ওপর ৪০০ মিলিসেকেন্ড আঙুল ধরে রাখলে স্ট্রোকটি সিলেক্ট হয়ে হালকা নীল হাইলাইট দেখাবে এবং আঙুল না তুলেই সরাসরি কাঙ্ক্ষিত জায়গায় টেনে বসানো যাবে।
 
 ---
 
-## 2. User Experience & Visual Design
+## ২. প্রস্তাবিত পরিবর্তন ও আর্কিটেকচার (Proposed Architecture & Changes)
 
-- **Key User Flows**:
-  1. **APK Installation & Direct Launch**: When the user installs the updated `SmartBoard-Pro.apk`, the Android package installer immediately shows an active **Open (ওপেন)** button on the installation completion screen, places the **SmartBoard Pro** adaptive icon on the Home Screen / App Drawer, and enables the **Open** button inside `Settings > Manage apps`.
-  2. **In-App Home Screen Shortcut Pinning**: Inside the top studio bar's **Studio Settings (স্টুডিও সেটিংস)** dialog, users can tap **Add Shortcut to Home Screen (হোম স্ক্রিনে শর্টকাট যোগ করুন)** to request an instant pinned launcher icon on Android 8.0+ devices.
-- **Visual Identity & Theme**:
-  - Preserves the **Precision Tactile Studio** aesthetic with Deep Slate (`#0F172A`) chrome, Electric Cobalt (`#2563EB`) interactive accents, and clean bilingual (`বাংলা` / `EN`) typography.
+### ক. কোঅর্ডিনেট সিঙ্ক ও টাচ বাউন্ডিং ফিক্স (`InteractiveWhiteboardCanvas.kt`, `CanvasRenderEngine.kt`)
+- **সমস্যা শনাক্তকরণ:** `pointerInput` কলটিতে `uiState.zoomScale`, `uiState.panOffsetX`, `uiState.panOffsetY` পরিবর্তন রিফ্রেশ না হওয়ায় এবং `rememberUpdatedState` ব্যবহার না করায় পয়েন্টার ইভেন্ট লুপে পুরোনো জুমিং মান রয়ে যেত। এছাড়া `saveLayer` এ ফিক্সড স্ক্রিন বাউন্ড ব্যবহার করায় জুম/প্যান অবস্থায় বাউন্ডিং অফসেট তৈরি হতো।
+- **সমাধান:** 
+  - `rememberUpdatedState(uiState)` প্রয়োগ করে প্রতিবার টাচ ডাউন হওয়ার মুহূর্তে লাইভ `zoomScale`, `panOffsetX`, `panOffsetY` নিশ্চিত করা।
+  - `CanvasRenderEngine.renderPageToAndroidCanvas`-এ আনবাউন্ডেড অথবা সঠিক ট্র্যান্সফর্মড ক্যানভাস ম্যাট্রিক্সের সাথে ড্রয়িং লেয়ারের নির্ভুল অ্যালাইনমেন্ট নিশ্চিত করা।
+
+### খ. স্ট্রোক লং-প্রেস ও মুভ ইঞ্জিন (`CanvasRenderEngine.kt`, `WhiteboardViewModel.kt`, `InteractiveWhiteboardCanvas.kt`)
+- **স্ট্রোক হিট-টেস্টিং (`findHitStrokeId`):** 
+  - ব্যবহারকারী ক্যানভাসে টাচ করলে নিকটবর্তী স্ট্রোকের পয়েন্ট ও বাউন্ডিং বক্স বিশ্লেষণ করে হিট টেস্ট করা হবে।
+- **লং-প্রেস ডিটেকশন ও ড্র্যাগ মোড (`GestureTarget.STROKE_MOVE`):**
+  - টাচ পয়েন্টে ৪০০ মিলিসেকেন্ড হোল্ড করলে ড্রয়িংয়ের বদলে মুভমেন্ট শুরু হবে।
+  - আঙুল সরানোর সাথে সাথে নির্বাচিত স্ট্রোকের প্রতিটি পয়েন্টে `dx, dy` অফসেট প্রয়োগ করে রিয়েল-টাইমে অবস্থান পরিবর্তন করা হবে।
+- **সিলেক্ট / ল্যাসো টুল সাপোর্ট:**
+  - টুলবার থেকে সিলেক্ট টুল বেছে নিয়ে যেকোনো ড্রয়িং বা অবজেক্টকে ট্যাপ বা ড্র্যাগ করে সিলেক্ট ও স্কেল/মুভ/ডিলিট করা যাবে।
+
+### গ. রিয়েল-টাইম বাংলা, ইংরেজি ও গণিত রিকগনিশন পাইপলাইন
+- **ডিবাউন্স ও স্ট্রোক বাফারিং (`HandwritingRecognitionEngine.kt`):**
+  - রিয়েল-টাইম মোড সচল থাকা অবস্থায় ব্যবহারকারী এক বা একাধিক স্ট্রোক দিলে একটি ২-সেকেন্ডের টাইমার চালু হবে।
+  - ২ সেকেন্ডের মধ্যে নতুন স্ট্রোক এলে টাইমার রিস্টার্ট হবে।
+  - ২ সেকেন্ড পূর্ণ হলে শেষ আঁকা স্ট্রোক ক্লাস্টারের বাউন্ডিং বক্স হিসাব করে বাংলা হরফ, ইংরেজি টেক্সট বা গণিত সমীকরণ (LaTeX / Unicode Math) শনাক্ত করে ক্যানভাসে ওই সুনির্দিষ্ট অবস্থানে টাইপড টেক্সট বা ম্যাথ ব্লকে প্রতিস্থাপন করবে (আসল স্ট্রোকটি আনডু করা যাবে)।
+
+### ঘ. ইউজার ইন্টারফেস ও টুলবার আপডেট (`FloatingBottomDock.kt`, `strings.xml`)
+- বটম ডকে "স্মার্ট রূপান্তর" (AI Auto-Type) টগল আইকন যুক্ত করা।
+- লং-প্রেস করে কোনো স্ট্রোক সিলেক্ট হলে উপরে স্কেল, মুভ এবং ডিলিট কন্টেক্সটুয়াল বাটন প্রদর্শন।
 
 ---
 
-## 3. Key Product Decisions & Trade-Offs
+## ৩. যাচাইকরণ ও টেস্টিং পরিকল্পনা (Verification Plan)
 
-- **Decision 1: Standard `CATEGORY_LAUNCHER` + `CATEGORY_DEFAULT` Manifest Resolution**
-  - *Chosen Approach*: Replace the mistyped `android.intent.action.LAUNCHER` category with `android.intent.category.LAUNCHER` and `android.intent.category.DEFAULT`, explicitly set `android:enabled="true"`, and use the fully qualified class name `com.example.MainActivity`.
-  - *Why*: Android's `LauncherApps` service and `PackageManager.getLaunchIntentForPackage()` require exact matching on `Intent.ACTION_MAIN` + `Intent.CATEGORY_LAUNCHER`.
-- **Decision 2: Automated Robolectric PackageManager & Activity Boot Verification**
-  - *Chosen Approach*: Add a dedicated Robolectric test suite that inspects the merged manifest through `PackageManager` and boots `MainActivity` through its full `onCreate` Compose lifecycle.
-  - *Why*: Prevents any regression in launcher intent resolution or activity startup before exporting the APK for GitHub download.
-- **Decision 3: Deterministic `SmartBoard-Pro.apk` Packaging**
-  - *Chosen Approach*: Configure `exportGithubApk` to copy the freshly packaged `outputs/apk/debug/app-debug.apk` directly into `apk/SmartBoard-Pro.apk` on every build so pushing to GitHub immediately updates the downloadable file.
-
----
-
-## 4. Technical Architecture & Data Strategy *(Technical Reference)*
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    Android PackageManager & Launcher                    │
-│  Intent(ACTION_MAIN) + Category(CATEGORY_LAUNCHER | CATEGORY_DEFAULT)   │
-└───────────────────────────────────┬─────────────────────────────────────┘
-                                    │ Resolves non-null Launch Intent
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                     MainActivity (enabled=true, exported=true)          │
-│  ┌─────────────────────────────┐     ┌───────────────────────────────┐  │
-│  │ Room SmartBoardDatabase     │     │ Defensive ClassroomRepository │  │
-│  │ (Offline Auto-Save Canvas)  │     │ (Safe Firebase Init Guard)    │  │
-│  └──────────────┬──────────────┘     └───────────────┬───────────────┘  │
-│                 └─────────────────┬──────────────────┘                  │
-│                                   ▼                                     │
-│                         WhiteboardViewModel                             │
-│                                   │                                     │
-│         ┌─────────────────────────┼─────────────────────────┐           │
-│         ▼                         ▼                         ▼           │
-│  InteractiveWhiteboard    FloatingBottomDock       StudioSettingsDialog │
-│  Canvas & Math Overlay    & Geometry Tools         (+ Pin Home Shortcut)│
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-- **Interactive Component & State Mapping**:
-  - **Launcher Intent Filter**: Maps `android.intent.action.MAIN` + `android.intent.category.LAUNCHER` directly to `com.example.MainActivity`.
-  - **Pin Shortcut Handler (`StudioSettingsDialog`)**: Invokes Android's `ShortcutManager.requestPinShortcut()` with a `ShortcutInfo` targeting `MainActivity` (`Intent.ACTION_MAIN`) and displays a bilingual confirmation banner in `WhiteboardViewModel`.
-  - **Robolectric Verification Suite**: Asserts `packageManager.getLaunchIntentForPackage(packageName) != null`, verifies `MainActivity` is present in `queryIntentActivities`, and launches `MainActivity` to idle state.
+- **অটোমেটেড টেস্ট (`CanvasCoordinateAndMovementTest.kt`):**
+  - জুমিং (যেমন ১৫০% বা ৫০%) এবং প্যানিং অফসেট অবস্থায় টাচ কোঅর্ডিনেট এবং ক্যানভাস ড্রয়িং পয়েন্টের মধ্যে ১:১ নিখুঁত মিল যাচাইকরণ।
+  - স্ট্রোক হিট-টেস্টিং এবং লং-প্রেস ড্র্যাগ মুভমেন্টের পজিশন শিফটিং টেস্ট।
+- **বিল্ড ও প্যাকেজিং ভেরিফিকেশন:**
+  - `gradle :app:testDebugUnitTest :app:exportGithubApk` চালিয়ে টেস্ট ও এপিকে সফলভাবে তৈরি নিশ্চিত করা।
+  - `compile_applet` চালিয়ে কোনো প্রকার সিনট্যাক্স বা কম্পাইলার এরর না থাকা নিশ্চিত করা।

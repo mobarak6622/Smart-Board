@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan to fix the root cause preventing SmartBoard Pro from appearing in the Android Launcher and enabling the Open button in Settings (fixing the AndroidManifest.xml intent-filter category from android.intent.action.LAUNCHER to android.intent.category.LAUNCHER), adding a one-tap Pin to Home Screen shortcut button in Studio Settings, adding a Robolectric PackageManager & MainActivity startup test suite, and rebuilding apk/SmartBoard-Pro.apk for GitHub download.",
-  "updatedAt":  "2026-11-01T22:29:10.323134991Z",
+  "summary":  "বাস্তবায়ন পরিকল্পনা:\n১. ক্যানভাসে লেখার স্থানচ্যুতি (এক স্থানে লিখলে অন্য স্থানে ওঠার সমস্যা) দূরীকরণ এবং জুমিং/প্যানিং কোঅর্ডিনেট সিঙ্ক।\n২. বাংলা, ইংরেজি ও গণিত সমীকরণ রিয়েল-টাইম হাতের লেখা চিহ্নিতকরণ (২ সেকেন্ড থামা মাত্র স্বয়ংক্রিয় কম্পিউটার টাইপ রূপান্তর)।\n৩. আঁকা ও লেখার ওপর লং-প্রেস (চেপে ধরে) সরাসরি ড্র্যাগ করে সরানো এবং নিবেদিত সিলেক্ট/ল্যাসো টুল সমর্থন।",
+  "updatedAt":  "2026-11-01T23:19:49.420780100Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

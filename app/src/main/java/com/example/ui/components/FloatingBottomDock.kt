@@ -134,6 +134,7 @@ fun FloatingBottomDock(
     onOpenTextDialog: () -> Unit,
     onPickGalleryImage: () -> Unit,
     onClearCanvas: () -> Unit,
+    onToggleAutoRecognition: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showCustomColorPicker by remember { mutableStateOf(false) }
@@ -431,6 +432,16 @@ fun FloatingBottomDock(
                         testTag = "dock_math_button"
                     )
                 }
+
+                // AI Real-time Handwriting-to-Type Toggle Button
+                DockTabButton(
+                    icon = Icons.Default.AutoFixHigh,
+                    label = if (uiState.language == com.example.localization.AppLanguage.BENGALI) "AI টাইপ" else "AI Type",
+                    selected = uiState.isAutoRecognitionActive,
+                    badgeColor = if (uiState.isAutoRecognitionActive) Color(0xFF10B981) else null,
+                    onClick = onToggleAutoRecognition,
+                    testTag = "dock_ai_type_button"
+                )
 
                 if (prefs.showInsertTab) {
                     DockTabButton(

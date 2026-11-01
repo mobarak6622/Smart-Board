@@ -41,13 +41,14 @@ object CanvasRenderEngine {
         page: BoardPage,
         activeStroke: CanvasStroke? = null,
         selectedObjectId: String? = null,
+        selectedStrokeId: String? = null,
         renderUnbakedMathNodes: Boolean = true
     ) {
-        // 1. Background Layer
+        // 1. Background Layer (Adaptive bounds matching canvas view and pan)
         drawBackground(canvas, width, height, page.backgroundType)
 
-        // 2. Offscreen Ink Layer so Pixel Eraser (PorterDuff.Mode.CLEAR) only erases strokes, never background
-        val layerCount = canvas.saveLayer(0f, 0f, width, height, null)
+        // 2. Offscreen Ink Layer: save unbounded layer so strokes are never clipped during zoom/pan
+        val layerCount = canvas.saveLayer(null, null)
         for (stroke in page.strokes) {
             drawStroke(canvas, stroke)
         }
@@ -56,7 +57,15 @@ object CanvasRenderEngine {
         }
         canvas.restoreToCount(layerCount)
 
-        // 3. Objects Layer (Text, Structured Math Cards, Images)
+        // 3. Highlight Selected Stroke if any (with cyan glowing dashed bounding box)
+        if (selectedStrokeId != null) {
+            val selStroke = page.strokes.firstOrNull { it.id == selectedStrokeId }
+            if (selStroke != null) {
+                drawStrokeSelectionBox(canvas, selStroke)
+            }
+        }
+
+        // 4. Objects Layer (Text, Structured Math Cards, Images)
         for (obj in page.objects) {
             if (obj.type == CanvasObjectType.MATH_FORMULA && !obj.isBakedToCanvas && !renderUnbakedMathNodes) {
                 continue
@@ -66,6 +75,62 @@ object CanvasRenderEngine {
             }
             drawCanvasObject(canvas, obj, isSelected = obj.id == selectedObjectId)
         }
+    }
+
+    fun drawStrokeSelectionBox(canvas: Canvas, stroke: CanvasStroke) {
+        val bounds = getStrokeBoundingBox(stroke)
+        val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            color = Color.parseColor("#38BDF8")
+            alpha = 80
+            strokeWidth = 8f
+        }
+        val dashPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            color = Color.parseColor("#06B6D4")
+            strokeWidth = 3f
+            pathEffect = DashPathEffect(floatArrayOf(16f, 10f), 0f)
+        }
+        canvas.drawRoundRect(bounds.left, bounds.top, bounds.right, bounds.bottom, 12f, 12f, glowPaint)
+        canvas.drawRoundRect(bounds.left, bounds.top, bounds.right, bounds.bottom, 12f, 12f, dashPaint)
+
+        // Draw Corner Handles
+        val anchorFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            color = Color.WHITE
+        }
+        val anchorStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            color = Color.parseColor("#0284C7")
+            strokeWidth = 2.5f
+        }
+        val corners = floatArrayOf(
+            bounds.left, bounds.top,
+            bounds.right, bounds.top,
+            bounds.left, bounds.bottom,
+            bounds.right, bounds.bottom
+        )
+        for (i in corners.indices step 2) {
+            canvas.drawCircle(corners[i], corners[i + 1], 7.5f, anchorFill)
+            canvas.drawCircle(corners[i], corners[i + 1], 7.5f, anchorStroke)
+        }
+    }
+
+    fun getStrokeBoundingBox(stroke: CanvasStroke): RectF {
+        val pts = stroke.points
+        if (pts.isEmpty()) return RectF(0f, 0f, 0f, 0f)
+        var minX = Float.MAX_VALUE
+        var minY = Float.MAX_VALUE
+        var maxX = Float.MIN_VALUE
+        var maxY = Float.MIN_VALUE
+        for (p in pts) {
+            if (p.x < minX) minX = p.x
+            if (p.x > maxX) maxX = p.x
+            if (p.y < minY) minY = p.y
+            if (p.y > maxY) maxY = p.y
+        }
+        val pad = stroke.strokeWidth / 2f + 14f
+        return RectF(minX - pad, minY - pad, maxX + pad, maxY + pad)
     }
 
     fun drawBackground(
@@ -78,7 +143,12 @@ object CanvasRenderEngine {
             style = Paint.Style.FILL
             color = Color.WHITE
         }
-        canvas.drawRect(0f, 0f, width, height, bgPaint)
+        val clip = canvas.clipBounds
+        val bgLeft = minOf(0f, clip.left.toFloat() - 300f)
+        val bgTop = minOf(0f, clip.top.toFloat() - 300f)
+        val bgRight = maxOf(width, clip.right.toFloat() + 300f)
+        val bgBottom = maxOf(height, clip.bottom.toFloat() + 300f)
+        canvas.drawRect(bgLeft, bgTop, bgRight, bgBottom, bgPaint)
 
         when (backgroundType) {
             BackgroundType.PLAIN_WHITE -> Unit

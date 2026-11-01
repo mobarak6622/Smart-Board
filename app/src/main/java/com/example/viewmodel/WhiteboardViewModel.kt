@@ -22,6 +22,7 @@ import com.example.model.CompassState
 import com.example.model.DrawingToolType
 import com.example.model.MathFormulaType
 import com.example.model.ProtractorState
+import com.example.engine.HandwritingRecognitionEngine
 import com.example.model.RulerState
 import com.example.model.StudioPreferences
 import com.example.ui.theme.DrawingPaletteColors
@@ -59,6 +60,10 @@ data class WhiteboardUiState(
     val protractor: ProtractorState = ProtractorState(),
     val compass: CompassState = CompassState(),
     val selectedObjectId: String? = null,
+    val selectedStrokeId: String? = null,
+    val isAutoRecognitionActive: Boolean = false,
+    val autoRecognitionCountdown: Int? = null,
+    val isRecognizingHandwriting: Boolean = false,
     val language: AppLanguage = AppLanguage.ENGLISH,
     val isSaving: Boolean = false,
     val canUndo: Boolean = false,
@@ -115,6 +120,8 @@ class WhiteboardViewModel(
     private var classroomMembersJob: Job? = null
     private var classroomSyncJob: Job? = null
     private var lastSyncedPagesJson: String = ""
+    private var autoRecognitionJob: Job? = null
+    private val pendingRecognitionStrokeIds = mutableListOf<String>()
 
     init {
         refreshAuthUser()
@@ -313,6 +320,9 @@ class WhiteboardViewModel(
         pushUndoSnapshot()
         updateCurrentPage { page ->
             page.copy(strokes = page.strokes + stroke)
+        }
+        if (_uiState.value.isAutoRecognitionActive) {
+            scheduleAutoRecognition(stroke.id)
         }
     }
 
@@ -579,7 +589,149 @@ class WhiteboardViewModel(
     }
 
     fun selectObject(objectId: String?) {
-        _uiState.update { it.copy(selectedObjectId = objectId) }
+        _uiState.update { it.copy(selectedObjectId = objectId, selectedStrokeId = if (objectId != null) null else it.selectedStrokeId) }
+    }
+
+    fun selectStroke(strokeId: String?) {
+        _uiState.update { it.copy(selectedStrokeId = strokeId, selectedObjectId = if (strokeId != null) null else it.selectedObjectId) }
+    }
+
+    fun moveSelectedStroke(dx: Float, dy: Float) {
+        val strokeId = _uiState.value.selectedStrokeId ?: return
+        if (!_uiState.value.canCurrentUserDraw) return
+        _uiState.update { state ->
+            val updatedPages = state.pages.mapIndexed { idx, p ->
+                if (idx != state.currentPageIndex) p
+                else p.copy(
+                    strokes = p.strokes.map { s ->
+                        if (s.id == strokeId) {
+                            s.copy(points = s.points.map { pt -> pt.copy(x = pt.x + dx, y = pt.y + dy) })
+                        } else s
+                    }
+                )
+            }
+            state.copy(pages = updatedPages)
+        }
+    }
+
+    fun commitStrokeMove() {
+        pushUndoSnapshot()
+        triggerAutoSave()
+        syncBoardToActiveClassroom()
+    }
+
+    fun scaleSelectedStroke(factorDelta: Float) {
+        val strokeId = _uiState.value.selectedStrokeId ?: return
+        if (!_uiState.value.canCurrentUserDraw) return
+        val currentStroke = _uiState.value.currentPage.strokes.firstOrNull { it.id == strokeId } ?: return
+        val bounds = HandwritingRecognitionEngine.computeStrokeBounds(currentStroke)
+        val cx = bounds.centerX()
+        val cy = bounds.centerY()
+        val scaleMultiplier = (1f + factorDelta).coerceIn(0.5f, 2.5f)
+
+        pushUndoSnapshot()
+        updateCurrentPage { page ->
+            page.copy(
+                strokes = page.strokes.map { s ->
+                    if (s.id == strokeId) {
+                        s.copy(
+                            strokeWidth = (s.strokeWidth * scaleMultiplier).coerceIn(2f, 64f),
+                            points = s.points.map { pt ->
+                                pt.copy(
+                                    x = cx + (pt.x - cx) * scaleMultiplier,
+                                    y = cy + (pt.y - cy) * scaleMultiplier
+                                )
+                            }
+                        )
+                    } else s
+                }
+            )
+        }
+    }
+
+    fun deleteSelectedStroke() {
+        val strokeId = _uiState.value.selectedStrokeId ?: return
+        if (!_uiState.value.canCurrentUserDraw) return
+        pushUndoSnapshot()
+        updateCurrentPage { page ->
+            page.copy(strokes = page.strokes.filterNot { it.id == strokeId })
+        }
+        _uiState.update { it.copy(selectedStrokeId = null) }
+    }
+
+    fun toggleAutoRecognition() {
+        _uiState.update {
+            val newState = !it.isAutoRecognitionActive
+            if (!newState) {
+                autoRecognitionJob?.cancel()
+                pendingRecognitionStrokeIds.clear()
+            }
+            it.copy(
+                isAutoRecognitionActive = newState,
+                autoRecognitionCountdown = null,
+                statusBannerMessage = if (newState)
+                    if (it.language == AppLanguage.BENGALI) "AI রিয়েলটাইম টাইপ সক্রিয় (২ সেকেন্ড বিরতি)" else "AI Realtime Type Active (2s delay)"
+                else
+                    if (it.language == AppLanguage.BENGALI) "AI রিয়েলটাইম টাইপ নিষ্ক্রিয়" else "AI Realtime Type Disabled"
+            )
+        }
+    }
+
+    fun triggerHandwritingRecognitionNow() {
+        autoRecognitionJob?.cancel()
+        val idsToProcess = pendingRecognitionStrokeIds.toList()
+        pendingRecognitionStrokeIds.clear()
+        _uiState.update { it.copy(autoRecognitionCountdown = null) }
+        executeHandwritingRecognition(idsToProcess)
+    }
+
+    fun convertSelectedStrokeToText() {
+        val strokeId = _uiState.value.selectedStrokeId ?: return
+        executeHandwritingRecognition(listOf(strokeId))
+        _uiState.update { it.copy(selectedStrokeId = null) }
+    }
+
+    private fun scheduleAutoRecognition(newStrokeId: String) {
+        pendingRecognitionStrokeIds.add(newStrokeId)
+        autoRecognitionJob?.cancel()
+        autoRecognitionJob = viewModelScope.launch {
+            _uiState.update { it.copy(autoRecognitionCountdown = 2) }
+            delay(1000L)
+            _uiState.update { it.copy(autoRecognitionCountdown = 1) }
+            delay(1000L)
+            _uiState.update { it.copy(autoRecognitionCountdown = null) }
+            val idsToProcess = pendingRecognitionStrokeIds.toList()
+            pendingRecognitionStrokeIds.clear()
+            executeHandwritingRecognition(idsToProcess)
+        }
+    }
+
+    private fun executeHandwritingRecognition(strokeIds: List<String>) {
+        if (strokeIds.isEmpty()) return
+        val page = _uiState.value.currentPage
+        val targetStrokes = page.strokes.filter { it.id in strokeIds }
+        if (targetStrokes.isEmpty()) return
+
+        val result = HandwritingRecognitionEngine.recognizeStrokes(targetStrokes) ?: return
+        val newObj = HandwritingRecognitionEngine.createObjectFromResult(result, _uiState.value.selectedColorArgb)
+
+        pushUndoSnapshot()
+        updateCurrentPage { p ->
+            p.copy(
+                strokes = p.strokes.filterNot { it.id in strokeIds },
+                objects = p.objects + newObj
+            )
+        }
+        _uiState.update {
+            it.copy(
+                selectedObjectId = newObj.id,
+                selectedStrokeId = null,
+                statusBannerMessage = if (it.language == AppLanguage.BENGALI)
+                    "কম্পিউটার টাইপ টেক্সট/সূত্রে রূপান্তর সম্পন্ন!"
+                else
+                    "Handwriting converted to typed object!"
+            )
+        }
     }
 
     fun moveSelectedObject(dx: Float, dy: Float) {

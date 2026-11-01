@@ -22,11 +22,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.OpenWith
 import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -41,6 +45,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -48,6 +53,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -63,6 +69,7 @@ import com.example.ui.theme.ElectricIndigo
 import com.example.ui.theme.PureWhite
 import com.example.ui.theme.StudioSlate900
 import com.example.viewmodel.WhiteboardUiState
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.hypot
@@ -79,6 +86,7 @@ private enum class GestureTarget {
     COMPASS_PIVOT,
     COMPASS_RADIUS,
     CANVAS_OBJECT_MOVE,
+    STROKE_MOVE,
     STROKE_ERASER,
     DRAW_STROKE
 }
@@ -91,10 +99,17 @@ fun InteractiveWhiteboardCanvas(
     onCommitStroke: (CanvasStroke) -> Unit,
     onEraseStrokeAt: (Float, Float) -> Unit,
     onSelectObject: (String?) -> Unit,
+    onSelectStroke: (String?) -> Unit = {},
     onMoveSelectedObject: (Float, Float) -> Unit,
     onMoveObjectById: (String, Float, Float) -> Unit,
+    onMoveSelectedStroke: (Float, Float) -> Unit = { _, _ -> },
+    onCommitStrokeMove: () -> Unit = {},
     onScaleSelectedObject: (Float) -> Unit,
     onScaleObjectById: (String, Float) -> Unit,
+    onScaleSelectedStroke: (Float) -> Unit = {},
+    onDeleteSelectedStroke: () -> Unit = {},
+    onConvertSelectedStrokeToText: () -> Unit = {},
+    onTriggerRecognitionNow: () -> Unit = {},
     onUpdateMathObject: (String, String, String, String) -> Unit,
     onFlattenMathObjectToCanvas: (String) -> Unit,
     onDeleteSelectedObject: () -> Unit,
@@ -115,6 +130,7 @@ fun InteractiveWhiteboardCanvas(
     onCanvasTouchStarted: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val currentUiState by rememberUpdatedState(uiState)
     val activePoints = remember { mutableStateListOf<PointFData>() }
     var isDrawingActive by remember { mutableStateOf(false) }
     var redrawTick by remember { mutableIntStateOf(0) }
@@ -130,27 +146,19 @@ fun InteractiveWhiteboardCanvas(
                 .fillMaxSize()
                 .testTag("whiteboard_canvas")
                 .pointerInput(
-                    uiState.activeTool,
-                    uiState.selectedColorArgb,
-                    uiState.strokeWidth,
-                    uiState.strokeAlpha,
-                    uiState.polygonSides,
-                    uiState.currentPageIndex,
-                    uiState.ruler.enabled,
-                    uiState.protractor.enabled,
-                    uiState.compass.enabled,
-                    uiState.studioPreferences.enableTwoFingerZoomPan,
+                    currentUiState.currentPageIndex,
+                    currentUiState.activeTool,
                     canDrawOnBoard
                 ) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
                         onCanvasTouchStarted()
 
-                        var localZoom = uiState.zoomScale.coerceIn(0.5f, 4f)
-                        var localPanX = uiState.panOffsetX
-                        var localPanY = uiState.panOffsetY
+                        var localZoom = currentUiState.zoomScale.coerceIn(0.5f, 4f)
+                        var localPanX = currentUiState.panOffsetX
+                        var localPanY = currentUiState.panOffsetY
 
-                        // Convert screen touch to world/canvas coordinates
+                        // Convert screen touch to exact world/canvas coordinates
                         val startWorldX = (down.position.x - localPanX) / localZoom
                         val startWorldY = (down.position.y - localPanY) / localZoom
 
@@ -160,9 +168,38 @@ fun InteractiveWhiteboardCanvas(
                             resolveGestureTarget(
                                 x = startWorldX,
                                 y = startWorldY,
-                                uiState = uiState,
-                                onSelectObject = onSelectObject
+                                uiState = currentUiState,
+                                onSelectObject = onSelectObject,
+                                onSelectStroke = onSelectStroke
                             )
+                        }
+
+                        // Hold-to-drag: check if user holds on an existing stroke for 320ms without moving
+                        var isHoldDrag = false
+                        if (target == GestureTarget.DRAW_STROKE && canDrawOnBoard && currentUiState.activeTool != DrawingToolType.STROKE_ERASER) {
+                            val hitStrokeId = CanvasRenderEngine.findHitStrokeId(currentUiState.currentPage, startWorldX, startWorldY, threshold = 28f)
+                            if (hitStrokeId != null) {
+                                val movedEarly = withTimeoutOrNull(320L) {
+                                    var moved = false
+                                    while (!moved) {
+                                        val ev = awaitPointerEvent(PointerEventPass.Main)
+                                        val p = ev.changes.firstOrNull() ?: break
+                                        if (!p.pressed) break
+                                        val dist = hypot(p.position.x - down.position.x, p.position.y - down.position.y)
+                                        if (dist > 16f) {
+                                            moved = true
+                                            break
+                                        }
+                                    }
+                                    moved
+                                }
+                                if (movedEarly == null) {
+                                    isHoldDrag = true
+                                    onSelectStroke(hitStrokeId)
+                                    onSelectObject(null)
+                                    target = GestureTarget.STROKE_MOVE
+                                }
+                            }
                         }
 
                         when (target) {
@@ -171,16 +208,18 @@ fun InteractiveWhiteboardCanvas(
                             }
 
                             GestureTarget.DRAW_STROKE -> {
-                                activePoints.clear()
-                                val snapped = CanvasRenderEngine.snapPointToInstruments(
-                                    rawX = startWorldX,
-                                    rawY = startWorldY,
-                                    ruler = uiState.ruler,
-                                    protractor = uiState.protractor
-                                )
-                                activePoints.add(snapped)
-                                isDrawingActive = true
-                                redrawTick++
+                                if (!isHoldDrag) {
+                                    activePoints.clear()
+                                    val snapped = CanvasRenderEngine.snapPointToInstruments(
+                                        rawX = startWorldX,
+                                        rawY = startWorldY,
+                                        ruler = currentUiState.ruler,
+                                        protractor = currentUiState.protractor
+                                    )
+                                    activePoints.add(snapped)
+                                    isDrawingActive = true
+                                    redrawTick++
+                                }
                             }
 
                             else -> Unit
@@ -256,14 +295,15 @@ fun InteractiveWhiteboardCanvas(
                                     GestureTarget.COMPASS_PIVOT -> onCompassPivotMove(worldDx, worldDy)
                                     GestureTarget.COMPASS_RADIUS -> onCompassRadiusAdjust(curWorldX, curWorldY)
                                     GestureTarget.CANVAS_OBJECT_MOVE -> onMoveSelectedObject(worldDx, worldDy)
+                                    GestureTarget.STROKE_MOVE -> onMoveSelectedStroke(worldDx, worldDy)
                                     GestureTarget.STROKE_ERASER -> onEraseStrokeAt(curWorldX, curWorldY)
                                     GestureTarget.DRAW_STROKE -> {
-                                        if (isShapeTool(uiState.activeTool)) {
+                                        if (isShapeTool(currentUiState.activeTool)) {
                                             val snapped = CanvasRenderEngine.snapPointToInstruments(
                                                 rawX = curWorldX,
                                                 rawY = curWorldY,
-                                                ruler = uiState.ruler,
-                                                protractor = uiState.protractor
+                                                ruler = currentUiState.ruler,
+                                                protractor = currentUiState.protractor
                                             )
                                             if (activePoints.size >= 2) {
                                                 activePoints[1] = snapped
@@ -278,8 +318,8 @@ fun InteractiveWhiteboardCanvas(
                                                 val hSnapped = CanvasRenderEngine.snapPointToInstruments(
                                                     rawX = hWorldX,
                                                     rawY = hWorldY,
-                                                    ruler = uiState.ruler,
-                                                    protractor = uiState.protractor
+                                                    ruler = currentUiState.ruler,
+                                                    protractor = currentUiState.protractor
                                                 )
                                                 val last = activePoints.lastOrNull()
                                                 if (last == null || hypot(hSnapped.x - last.x, hSnapped.y - last.y) >= 1.8f) {
@@ -289,8 +329,8 @@ fun InteractiveWhiteboardCanvas(
                                             val snapped = CanvasRenderEngine.snapPointToInstruments(
                                                 rawX = curWorldX,
                                                 rawY = curWorldY,
-                                                ruler = uiState.ruler,
-                                                protractor = uiState.protractor
+                                                ruler = currentUiState.ruler,
+                                                protractor = currentUiState.protractor
                                             )
                                             val last = activePoints.lastOrNull()
                                             if (last == null || hypot(snapped.x - last.x, snapped.y - last.y) >= 1.8f) {
@@ -310,14 +350,18 @@ fun InteractiveWhiteboardCanvas(
                             }
                         } while (event.changes.any { it.pressed })
 
+                        if (target == GestureTarget.STROKE_MOVE) {
+                            onCommitStrokeMove()
+                        }
+
                         if (!multiTouchMode && target == GestureTarget.DRAW_STROKE && activePoints.isNotEmpty() && canDrawOnBoard) {
                             val committedStroke = CanvasStroke(
-                                toolType = uiState.activeTool,
-                                colorArgb = uiState.selectedColorArgb,
-                                strokeWidth = uiState.strokeWidth,
-                                alpha = uiState.strokeAlpha,
+                                toolType = currentUiState.activeTool,
+                                colorArgb = currentUiState.selectedColorArgb,
+                                strokeWidth = currentUiState.strokeWidth,
+                                alpha = currentUiState.strokeAlpha,
                                 points = activePoints.toList(),
-                                polygonSides = uiState.polygonSides
+                                polygonSides = currentUiState.polygonSides
                             )
                             isDrawingActive = false
                             activePoints.clear()
@@ -333,12 +377,12 @@ fun InteractiveWhiteboardCanvas(
             val tick = redrawTick
             val liveStroke = if (isDrawingActive && activePoints.isNotEmpty() && tick >= 0) {
                 CanvasStroke(
-                    toolType = uiState.activeTool,
-                    colorArgb = uiState.selectedColorArgb,
-                    strokeWidth = uiState.strokeWidth,
-                    alpha = uiState.strokeAlpha,
+                    toolType = currentUiState.activeTool,
+                    colorArgb = currentUiState.selectedColorArgb,
+                    strokeWidth = currentUiState.strokeWidth,
+                    alpha = currentUiState.strokeAlpha,
                     points = activePoints.toList(),
-                    polygonSides = uiState.polygonSides
+                    polygonSides = currentUiState.polygonSides
                 )
             } else null
 
@@ -351,9 +395,10 @@ fun InteractiveWhiteboardCanvas(
                 canvas = nativeCanvas,
                 width = size.width,
                 height = size.height,
-                page = uiState.currentPage,
+                page = currentUiState.currentPage,
                 activeStroke = liveStroke,
-                selectedObjectId = uiState.selectedObjectId,
+                selectedObjectId = currentUiState.selectedObjectId,
+                selectedStrokeId = currentUiState.selectedStrokeId,
                 renderUnbakedMathNodes = false
             )
 
@@ -568,9 +613,145 @@ fun InteractiveWhiteboardCanvas(
             }
         }
 
-        // 6. Contextual Action Button when Compass is enabled so user can stamp the precision circle/arc
+        // 6. Contextual Action Bar for Selected Stroke (Drawn ink / writing)
+        val selectedStroke = currentUiState.currentPage.strokes.firstOrNull { it.id == currentUiState.selectedStrokeId }
+        val showStrokeBar = selectedStroke != null
+
         AnimatedVisibility(
-            visible = uiState.compass.enabled,
+            visible = showStrokeBar,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 86.dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = StudioSlate900.copy(alpha = 0.94f),
+                tonalElevation = 8.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    // Indicator Tag
+                    Text(
+                        text = strings.strokeSelectedTitle,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFF38BDF8),
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(start = 4.dp, end = 2.dp)
+                    )
+
+                    // Scale Down
+                    IconButton(
+                        onClick = { onScaleSelectedStroke(-0.15f) },
+                        modifier = Modifier.testTag("scale_down_stroke_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Remove,
+                            contentDescription = strings.scaleDown,
+                            tint = PureWhite
+                        )
+                    }
+
+                    // Scale Up
+                    IconButton(
+                        onClick = { onScaleSelectedStroke(0.15f) },
+                        modifier = Modifier.testTag("scale_up_stroke_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = strings.scaleUp,
+                            tint = PureWhite
+                        )
+                    }
+
+                    // Convert to Computer Typed Text / Math
+                    IconButton(
+                        onClick = onConvertSelectedStrokeToText,
+                        modifier = Modifier.testTag("convert_stroke_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoFixHigh,
+                            contentDescription = strings.convertHandwritingNow,
+                            tint = Color(0xFFFBBF24)
+                        )
+                    }
+
+                    // Delete Stroke
+                    IconButton(
+                        onClick = onDeleteSelectedStroke,
+                        modifier = Modifier.testTag("delete_stroke_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = strings.deleteSelectedObject,
+                            tint = Color(0xFFF87171)
+                        )
+                    }
+
+                    // Deselect
+                    IconButton(
+                        onClick = { onSelectStroke(null) },
+                        modifier = Modifier.testTag("deselect_stroke_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = strings.deselectStroke,
+                            tint = PureWhite
+                        )
+                    }
+                }
+            }
+        }
+
+        // 7. Auto-Recognition Countdown & Instant Convert Floating Pill
+        AnimatedVisibility(
+            visible = currentUiState.autoRecognitionCountdown != null,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 88.dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(22.dp),
+                color = ElectricIndigo.copy(alpha = 0.95f),
+                tonalElevation = 10.dp,
+                shadowElevation = 8.dp
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .clickable { onTriggerRecognitionNow() }
+                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                        .testTag("trigger_auto_recognition_pill")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AutoFixHigh,
+                        contentDescription = "AI Recognition",
+                        tint = PureWhite,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = if (currentUiState.language == AppLanguage.BENGALI)
+                            "কম্পিউটার টাইপ হচ্ছে (${currentUiState.autoRecognitionCountdown} সে.) • এখনই রূপান্তর"
+                        else
+                            "Typing in ${currentUiState.autoRecognitionCountdown}s • Convert Now",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = PureWhite,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+
+        // 8. Contextual Action Button when Compass is enabled so user can stamp the precision circle/arc
+        AnimatedVisibility(
+            visible = currentUiState.compass.enabled,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier
@@ -614,7 +795,8 @@ private fun resolveGestureTarget(
     x: Float,
     y: Float,
     uiState: WhiteboardUiState,
-    onSelectObject: (String?) -> Unit
+    onSelectObject: (String?) -> Unit,
+    onSelectStroke: (String?) -> Unit
 ): GestureTarget {
     if (uiState.activeTool == DrawingToolType.HAND_PAN) {
         return GestureTarget.HAND_PAN
@@ -667,15 +849,35 @@ private fun resolveGestureTarget(
         }
     }
 
-    // 4. Check CanvasObject hit if in SELECT_MOVE mode or tapping directly on an object
-    val hitObjId = CanvasRenderEngine.findHitObjectId(uiState.currentPage, x, y)
+    // 4. In SELECT_MOVE mode, check strokes first then objects
     if (uiState.activeTool == DrawingToolType.SELECT_MOVE) {
-        onSelectObject(hitObjId)
-        return if (hitObjId != null) GestureTarget.CANVAS_OBJECT_MOVE else GestureTarget.NONE
-    } else if (hitObjId != null && hitObjId == uiState.selectedObjectId) {
-        return GestureTarget.CANVAS_OBJECT_MOVE
-    } else if (uiState.selectedObjectId != null) {
+        val hitStrokeId = CanvasRenderEngine.findHitStrokeId(uiState.currentPage, x, y)
+        if (hitStrokeId != null) {
+            onSelectStroke(hitStrokeId)
+            onSelectObject(null)
+            return GestureTarget.STROKE_MOVE
+        }
+        val hitObjId = CanvasRenderEngine.findHitObjectId(uiState.currentPage, x, y)
+        if (hitObjId != null) {
+            onSelectObject(hitObjId)
+            onSelectStroke(null)
+            return GestureTarget.CANVAS_OBJECT_MOVE
+        }
+        onSelectStroke(null)
         onSelectObject(null)
+        return GestureTarget.NONE
+    }
+
+    // If an object is already selected and tapped
+    val hitObjId = CanvasRenderEngine.findHitObjectId(uiState.currentPage, x, y)
+    if (hitObjId != null && hitObjId == uiState.selectedObjectId) {
+        return GestureTarget.CANVAS_OBJECT_MOVE
+    }
+
+    // If a stroke is already selected and tapped
+    val hitStrokeId = CanvasRenderEngine.findHitStrokeId(uiState.currentPage, x, y)
+    if (hitStrokeId != null && hitStrokeId == uiState.selectedStrokeId) {
+        return GestureTarget.STROKE_MOVE
     }
 
     // 5. Eraser or Drawing Tool

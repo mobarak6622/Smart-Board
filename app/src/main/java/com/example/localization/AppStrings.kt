@@ -111,7 +111,15 @@ data class StudioStrings(
     val sharePng: String,
     val sharePdf: String,
     val exportSuccessPng: String,
-    val exportSuccessPdf: String
+    val exportSuccessPdf: String,
+    val autoRecognitionTitle: String,
+    val autoRecognitionSubtitle: String,
+    val convertHandwritingNow: String,
+    val strokeSelectedTitle: String,
+    val holdToMoveHint: String,
+    val convertingHandwriting: String,
+    val convertedSuccessfully: String,
+    val deselectStroke: String
 )
 
 object LocalizationProvider {
@@ -210,7 +218,15 @@ object LocalizationProvider {
         sharePng = "Share Page Image (PNG)",
         sharePdf = "Share Multi-Page PDF",
         exportSuccessPng = "PNG exported successfully",
-        exportSuccessPdf = "Multi-page PDF exported successfully"
+        exportSuccessPdf = "Multi-page PDF exported successfully",
+        autoRecognitionTitle = "AI Realtime Type",
+        autoRecognitionSubtitle = "Converts handwriting to typed text 2s after lifting finger",
+        convertHandwritingNow = "Convert Now",
+        strokeSelectedTitle = "Drawing Selected",
+        holdToMoveHint = "Hold any drawing or writing to move",
+        convertingHandwriting = "Converting handwriting to typed text...",
+        convertedSuccessfully = "Handwriting converted to typed computer text!",
+        deselectStroke = "Deselect"
     )
 
     val bengali = StudioStrings(
@@ -308,7 +324,15 @@ object LocalizationProvider {
         sharePng = "PNG ছবি শেয়ার করুন",
         sharePdf = "PDF ফাইল শেয়ার করুন",
         exportSuccessPng = "PNG সফলভাবে সংরক্ষিত হয়েছে",
-        exportSuccessPdf = "PDF সফলভাবে সংরক্ষিত হয়েছে"
+        exportSuccessPdf = "PDF সফলভাবে সংরক্ষিত হয়েছে",
+        autoRecognitionTitle = "AI রিয়েলটাইম টাইপ",
+        autoRecognitionSubtitle = "লেখা শেষ করে ২ সেকেন্ড থামলেই স্বয়ংক্রিয় টাইপ রূপান্তর",
+        convertHandwritingNow = "এখনই রূপান্তর করুন",
+        strokeSelectedTitle = "অঙ্কন নির্বাচিত",
+        holdToMoveHint = "লেখা বা আঁকা চেপে ধরে টেনে সরান",
+        convertingHandwriting = "কম্পিউটার টাইপে রূপান্তর হচ্ছে...",
+        convertedSuccessfully = "হাতের লেখা কম্পিউটার টাইপ টেক্সট/সূত্রে রূপান্তরিত হয়েছে!",
+        deselectStroke = "নির্বাচন বাতিল"
     )
 
     fun forLanguage(language: AppLanguage): StudioStrings =
