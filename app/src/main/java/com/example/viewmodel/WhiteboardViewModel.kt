@@ -1044,6 +1044,10 @@ class WhiteboardViewModel(
         }
     }
 
+    fun postStatusMessage(message: String) {
+        showBanner(message)
+    }
+
     private fun showBanner(message: String) {
         bannerJob?.cancel()
         bannerJob = viewModelScope.launch {

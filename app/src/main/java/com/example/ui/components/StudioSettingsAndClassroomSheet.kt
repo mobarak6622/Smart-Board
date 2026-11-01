@@ -99,6 +99,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
+import android.content.Intent
+import android.content.pm.ShortcutInfo
+import android.content.pm.ShortcutManager
+import android.graphics.drawable.Icon as AndroidIcon
+import android.os.Build
+import com.example.MainActivity
+
 /**
  * 1. Customizable Studio & Toolbar Settings Dialog ("সেটিংস থেকে আমার মন মতো টুলস চালু করার ব্যবস্থা")
  */
@@ -108,9 +115,11 @@ fun StudioSettingsDialog(
     language: AppLanguage,
     strings: StudioStrings,
     onUpdatePreferences: (StudioPreferences) -> Unit,
+    onShowStatusMessage: (String) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val isBn = language == AppLanguage.BENGALI
+    val context = LocalContext.current
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -199,6 +208,33 @@ fun StudioSettingsDialog(
                     checked = preferences.showBackgroundTab,
                     onCheckedChange = { onUpdatePreferences(preferences.copy(showBackgroundTab = it)) }
                 )
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                Text(
+                    text = if (isBn) "হোম স্ক্রিন লঞ্চার শর্টকাট" else "Home Screen Launcher Shortcut",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = ElectricIndigo
+                )
+
+                OutlinedButton(
+                    onClick = {
+                        val added = requestPinHomeShortcut(context)
+                        val msg = if (added) {
+                            if (isBn) "হোম স্ক্রিনে শর্টকাট যোগ করার অনুরোধ পাঠানো হয়েছে" else "Home screen shortcut request sent"
+                        } else {
+                            if (isBn) "এই লঞ্চারে পিন শর্টকাট সমর্থিত নয়" else "Pinned shortcuts not supported by current launcher"
+                        }
+                        onShowStatusMessage(msg)
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("pin_home_shortcut_button")
+                ) {
+                    Text(
+                        text = if (isBn) "হোম স্ক্রিনে আইকন শর্টকাট পিন করুন" else "Pin App Icon to Home Screen"
+                    )
+                }
             }
         },
         confirmButton = {
@@ -207,6 +243,26 @@ fun StudioSettingsDialog(
             }
         }
     )
+}
+
+fun requestPinHomeShortcut(context: Context): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+    return runCatching {
+        val shortcutManager = context.getSystemService(ShortcutManager::class.java) ?: return false
+        if (!shortcutManager.isRequestPinShortcutSupported) return false
+        val launchIntent = Intent(context, MainActivity::class.java).apply {
+            action = Intent.ACTION_MAIN
+            addCategory(Intent.CATEGORY_LAUNCHER)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pinShortcutInfo = ShortcutInfo.Builder(context, "smartboard_pro_home_pin")
+            .setShortLabel(context.getString(R.string.app_name))
+            .setLongLabel(context.getString(R.string.app_name))
+            .setIcon(AndroidIcon.createWithResource(context, R.mipmap.ic_launcher))
+            .setIntent(launchIntent)
+            .build()
+        shortcutManager.requestPinShortcut(pinShortcutInfo, null)
+    }.getOrDefault(false)
 }
 
 @Composable

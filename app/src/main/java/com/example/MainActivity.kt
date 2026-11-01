@@ -55,7 +55,9 @@ class MainActivity : ComponentActivity() {
 
         val database = SmartBoardDatabase.getDatabase(applicationContext)
         val repository = WhiteboardRepository(database.projectDao(), applicationContext)
-        val classroomRepository = ClassroomRepository(applicationContext)
+        val classroomRepository = runCatching {
+            ClassroomRepository(applicationContext)
+        }.getOrNull()
 
         setContent {
             SmartBoardProTheme {
@@ -311,6 +313,7 @@ fun SmartBoardProApp(
                 language = uiState.language,
                 strings = strings,
                 onUpdatePreferences = viewModel::updateStudioPreferences,
+                onShowStatusMessage = viewModel::postStatusMessage,
                 onDismiss = { showStudioSettingsDialog = false }
             )
         }

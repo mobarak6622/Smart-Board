@@ -154,10 +154,7 @@ dependencies {
 
 val exportGithubApk = tasks.register<Copy>("exportGithubApk") {
   duplicatesStrategy = DuplicatesStrategy.INCLUDE
-  from(
-    "${rootDir}/.build-outputs/app-debug.apk",
-    layout.buildDirectory.file("outputs/apk/debug/app-debug.apk")
-  )
+  from(layout.buildDirectory.file("outputs/apk/debug/app-debug.apk"))
   into("${rootDir}/apk")
   rename { "SmartBoard-Pro.apk" }
 }
